@@ -37,7 +37,7 @@ These are usable capacities, not total tank volumes or simulator configuration e
 
 Read-only local inspection on 2026-10-07 found package `microsoft-aircraft-a330`, version `0.0.53`, and the preset directory `SimObjects/Airplanes/microsoft-a330/presets/inibuilds/a330-300 (rr)`.
 
-This identifies the starting installation, not a verified compatibility range. The base aircraft's exact engine rating, runtime fuel implementation, and cockpit extension points have not been established for this version.
+This identifies the starting installation, not a verified compatibility range. Read-only checks found live legacy fuel mode, approximately 233t maximum takeoff weight, zero centre-tank capacity, and readable wing/trim state. Exact engine rating, internal fuel logic, and the required cockpit extension points remain unresolved.
 
 ## Items requiring evidence before implementation
 
@@ -48,4 +48,4 @@ This identifies the starting installation, not a verified compatibility range. T
 - Performance-data applicability, including speeds, fuel predictions, and takeoff/landing calculations; accepting a weight entry alone is insufficient.
 - Any required aerodynamic or braking changes, supported by evidence and comparison with the base aircraft.
 
-The next step is a read-only inspection of the stock aircraft's available extension points. Simulator configuration changes and cockpit work follow only after those interfaces are understood.
+Static archive and VFS inspection established the RR preset's attachment map, metadata, engine and geometry contributions, and panel/EFB references. Candidate v0.1.2 preserves those stock preset contributions and has passed private SDK packaging checks. User evidence confirms variant selection and exterior rendering, followed by a successful reported basic ground check. Numerical weight/fuel comparison, detailed systems behavior, flight performance and modification interfaces remain unresolved. The next development step is mapping the fixed WV081 weight limits through simulator configuration and EFB/FMS handling; centre-tank integration remains separate work.

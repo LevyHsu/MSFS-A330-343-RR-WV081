@@ -1,0 +1,16 @@
+{
+  "dependencies": [
+    {
+      "name": "microsoft-aircraft-a330",
+      "package_version": "0.0.53"
+    }
+  ],
+  "content_type": "AIRCRAFT",
+  "title": "A330 WV081 Community - RR Development Baseline",
+  "manufacturer": "Airbus",
+  "creator": "A330 WV081 Community",
+  "package_version": "0.1.1",
+  "minimum_game_version": "1.8.16",
+  "export_type": "Community",
+  "package_order_hint": "SIMOBJECTS_PATCH"
+}

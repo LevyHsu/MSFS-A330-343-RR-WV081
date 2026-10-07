@@ -2,7 +2,7 @@
 
 A community-driven, completely free delta mod targeting the Rolls-Royce-powered A330-343 WV081, a 242-tonne high-gross-weight version of the default Microsoft/iniBuilds A330-300 (RR) for Microsoft Flight Simulator 2024.
 
-**Status:** Initial development. This repository currently contains project documentation and licensing; no installable mod is available yet.
+**Status:** Baseline v0.1.1 is withdrawn after two startup crashes. Candidate v0.1.2 preserves the installed RR preset's configuration and applies our variant metadata. Its private SDK package build passed on 2026-10-08; the user confirmed variant selection and reported that the subsequent basic in-game ground check looked good. Detailed systems, weight/fuel and flight-performance validation remain outstanding. No public release is available, and 242t limits and centre-tank activation are not implemented. See the [local preparation and baseline status](package/README.md).
 
 ## Requirements and scope
 

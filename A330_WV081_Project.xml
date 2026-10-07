@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Run tools/prepare_sdk_sources.py first. Prepared sources and SDK output are private. -->
+<Project Version="2" Name="A330_WV081_Project" FolderName="Packages" MetadataFolderName="PackagesMetadata">
+    <OutputDirectory>dist\sdk</OutputDirectory>
+    <TemporaryOutputDirectory>dist\sdk\_PackageInt</TemporaryOutputDirectory>
+    <Packages>
+        <Package>PackageDefinitions\a330-wv081-aircraft-baseline.xml</Package>
+    </Packages>
+</Project>
