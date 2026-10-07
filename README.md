@@ -1,15 +1,19 @@
-# MSFS A330-300 WV050 242t High Gross Weight Mod
+# MSFS A330-343 WV081 242t High Gross Weight Mod
 
-A community-driven, completely free delta mod targeting the WV050 242-tonne high-gross-weight version of the default Microsoft/iniBuilds A330-300 for Microsoft Flight Simulator.
+A community-driven, completely free delta mod targeting the Rolls-Royce-powered A330-343 WV081, a 242-tonne high-gross-weight version of the default Microsoft/iniBuilds A330-300 (RR) for Microsoft Flight Simulator 2024.
 
 **Status:** Initial development. This repository currently contains project documentation and licensing; no installable mod is available yet.
 
 ## Requirements and scope
 
-- You must own Microsoft Flight Simulator and have the original default Microsoft/iniBuilds A330-300 installed and available.
-- This is an add-on to the original aircraft, not a standalone aircraft. The mod will contain only the changes needed for the intended WV050 242t variant, without redistributing the original aircraft or its proprietary assets.
+- You must own Microsoft Flight Simulator 2024 and have the original default Microsoft/iniBuilds A330-300 (RR) installed and available.
+- This is an add-on to the original aircraft, not a standalone aircraft. The mod will contain only the changes needed for the intended WV081 242t variant, without redistributing the original aircraft or its proprietary assets.
 - The project is freeware: no purchase, subscription, or paid access is required for the mod. The simulator and original aircraft are separate requirements.
 - Supported simulator and aircraft versions, installation instructions, and implemented features will be documented when a usable release is available.
+
+## Development target
+
+The first version targets fixed limits of 242t maximum takeoff weight, 187t maximum landing weight, and 171t maximum zero-fuel weight. Centre-tank activation is also planned, with its installation details and simulator integration still to be established. See the [aircraft specification](docs/aircraft-specification.md) for sources, reference capacities, and unresolved items.
 
 ## Disclaimer
 
