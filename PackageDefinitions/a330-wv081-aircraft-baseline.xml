@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<AssetPackage Version="0.1.2">
+<AssetPackage Version="0.3.1">
     <ItemSettings>
         <ContentType>AIRCRAFT</ContentType>
-        <Title>A330 WV081 Community - RR Development Baseline</Title>
+        <Title>A330 WV081 Community - RR Centre-Fuel Prototype</Title>
         <Manufacturer>Airbus</Manufacturer>
         <Creator>A330 WV081 Community</Creator>
     </ItemSettings>
@@ -30,10 +30,24 @@
             <AssetDir>dist\local-sdk-sources\preset-resources\</AssetDir>
             <OutputDir>SimObjects\Airplanes\microsoft-a330\presets\a330wv081community\a330-300-rr-baseline\</OutputDir>
         </AssetGroup>
+        <AssetGroup Name="Wv081EfbLoader">
+            <Type>Copy</Type>
+            <AssetDir>dist\local-sdk-sources\efb-loader\</AssetDir>
+            <OutputDir>html_ui\</OutputDir>
+        </AssetGroup>
         <AssetGroup Name="LocalBuildNotice">
             <Type>Copy</Type>
             <AssetDir>dist\local-sdk-sources\legal\</AssetDir>
             <OutputDir>.</OutputDir>
         </AssetGroup>
+        <AssetGroup Name="CenterControls">
+            <Type>Copy</Type>
+            <AssetDir>dist\local-sdk-sources\center-controls\SimObjects\Airplanes\microsoft-a330\</AssetDir>
+            <OutputDir>SimObjects\Airplanes\microsoft-a330\</OutputDir>
+        </AssetGroup>
     </AssetGroups>
+    <GloballyOverridenBaseSimFiles>
+        <GloballyOverridenBaseSimFile>html_ui/pages/vcockpit/instruments/ini-efb-a330/ini-efb-a330.html</GloballyOverridenBaseSimFile>
+        <GloballyOverridenBaseSimFile>html_ui/pages/vcockpit/instruments/wasminstrument/wasminstrument.html</GloballyOverridenBaseSimFile>
+    </GloballyOverridenBaseSimFiles>
 </AssetPackage>

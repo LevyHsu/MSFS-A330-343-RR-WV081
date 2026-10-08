@@ -2,7 +2,7 @@
 
 A community-driven, completely free delta mod targeting the Rolls-Royce-powered A330-343 WV081, a 242-tonne high-gross-weight version of the default Microsoft/iniBuilds A330-300 (RR) for Microsoft Flight Simulator 2024.
 
-**Status:** Baseline v0.1.1 is withdrawn after two startup crashes. Candidate v0.1.2 preserves the installed RR preset's configuration and applies our variant metadata. Its private SDK package build passed on 2026-10-08; the user confirmed variant selection and reported that the subsequent basic in-game ground check looked good. Detailed systems, weight/fuel and flight-performance validation remain outstanding. No public release is available, and 242t limits and centre-tank activation are not implemented. See the [local preparation and baseline status](package/README.md).
+**Status:** v0.3.1 passed SDK packaging and is installed locally to correct the v0.3.0 systems-startup failure. It uses the original installed systems module and retains donor overhead controls, provisional ECAM indications and ZFW entry through 175t with a red warning above 171t. Centre refuelling/transfer is not implemented; adding capacity does not activate it. In-game power-up and control rendering still need confirmation. Later-production exterior details follow fuel integration. No public release is available. See the [private development workflow](package/README.md).
 
 ## Requirements and scope
 
@@ -13,7 +13,7 @@ A community-driven, completely free delta mod targeting the Rolls-Royce-powered 
 
 ## Development target
 
-The first version targets fixed limits of 242t maximum takeoff weight, 187t maximum landing weight, and 171t maximum zero-fuel weight. Centre-tank activation is also planned, with its installation details and simulator integration still to be established. See the [aircraft specification](docs/aircraft-specification.md) for sources, reference capacities, and unresolved items.
+The core work is a functioning centre tank with matching overhead controls, fuel supply, automatic trim transfer and ECAM indications. Later-production exterior model differences follow that integration. Fixed aircraft limits remain 242t maximum takeoff weight, 187t maximum landing weight and 171t maximum zero-fuel weight; entry up to 175t is allowed for SimBrief compatibility with an overweight warning, rather than treated as a higher certified limit. See the [aircraft specification](docs/aircraft-specification.md) for sources, reference capacities, and unresolved items.
 
 ## Disclaimer
 

@@ -4,8 +4,11 @@ import argparse
 import configparser
 import io
 from pathlib import Path
+import shutil
 import tempfile
 import xml.etree.ElementTree as ET
+
+from prepare_center_controls import prepare as prepare_center_controls
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,28 +27,35 @@ MERGE_XML_FILES = (
     "sound/sound.xml", "soundai/soundai.xml", "checklist/a330-300_checklist.xml",
 )
 THUMBNAILS = ("thumbnail.png", "thumbnail_button.png", "thumbnail_side.png")
+DELTA_CFG_FILES = ("config/aircraft.cfg", "config/flight_model.cfg", "config/attached_objects.cfg")
+EFB_HTML = Path("html_ui/Pages/VCockpit/Instruments/ini-efb-a330/ini-efb-a330.html")
+EFB_EXTENSION = Path("html_ui/Pages/VCockpit/Instruments/a330-wv081-efb/a330-wv081-efb.js")
+WASM_HTML = Path("html_ui/Pages/VCockpit/Instruments/WasmInstrument/WasmInstrument.html")
+FUEL_EXTENSION = Path("html_ui/Pages/VCockpit/Instruments/a330-wv081-fuel/a330-wv081-fuel.js")
+STOCK_EFB_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/ini-efb-a330/ini-efb-a330.js"></script>'
+WV081_EFB_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/a330-wv081-efb/a330-wv081-efb.js"></script>'
+STOCK_WASM_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/WasmInstrument/WasmInstrument.js"></script>'
+WV081_FUEL_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/a330-wv081-fuel/a330-wv081-fuel.js"></script>'
 NOTICE = (
     "LOCAL BUILD ONLY - DO NOT REDISTRIBUTE\n\n"
-    "This tree contains configuration read from the user's installed Microsoft/iniBuilds A330.\n"
-    "Stock-derived configuration retains its original rights and is not covered by the\n"
+    "This tree contains configuration, instrument loaders and model data derived from the user's installed A330.\n"
+    "Stock-derived material retains its original rights and is not covered by the\n"
     "project's CC BY-NC-SA 4.0 license. That license covers original project contributions only.\n"
     "Keep this prepared source and any SDK output private. Distribute only the original\n"
-    "preparation tool, metadata delta, thumbnails, and project documentation.\n"
+    "preparation tools, original configuration deltas, instrument extensions, thumbnails, and documentation.\n"
     "SDK compilation and simulator loading have not been validated by this preparation.\n"
 )
 
 
-def aircraft_config(data):
+def read_config(data):
     parsed = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=(";",))
     parsed.read_string(data.decode("utf-8-sig"))
     return {section.upper(): dict(parsed[section]) for section in parsed.sections()}
 
 
-def merge_aircraft(stock, delta):
-    merged = aircraft_config(stock)
-    if merged.get("GENERAL", {}).get("icao_type_designator", "").strip('"') != "A333":
-        raise ValueError("Expected the stock A330-300 RR preset (A333)")
-    for section, values in aircraft_config(delta).items():
+def merge_config(stock, delta):
+    merged = read_config(stock)
+    for section, values in read_config(delta).items():
         merged.setdefault(section, {}).update(values)
     result = configparser.ConfigParser(interpolation=None)
     result.read_dict(merged)
@@ -61,17 +71,36 @@ def prepare(vfs_root):
     stock = {name: (stock_root / STOCK_PRESET / name).read_bytes() for name in CFG_FILES}
     if any(not content.strip() for content in stock.values()):
         raise ValueError("A stock preset configuration is empty; keep VFS Projector active and retry")
-    metadata = merge_aircraft(stock["config/aircraft.cfg"], (delta_root / "config/aircraft.cfg").read_bytes())
+    identity = read_config(stock["config/aircraft.cfg"])
+    if identity.get("GENERAL", {}).get("icao_type_designator", "").strip('"') != "A333":
+        raise ValueError("Expected the stock A330-300 RR preset (A333)")
+    if "SIM_ATTACHMENT.3" in read_config(stock["config/attached_objects.cfg"]):
+        raise ValueError("Stock attachment slot 3 is occupied; review the centre-control attachment delta")
+    overrides = {name: merge_config(stock[name], (delta_root / name).read_bytes()) for name in DELTA_CFG_FILES}
     merge_xml = {}
     for name in MERGE_XML_FILES:
         source_root = ET.fromstring((stock_root / "common" / name).read_bytes())
         stub = ET.Element(source_root.tag, {**source_root.attrib, "AutoMerge": "1"})
         merge_xml[name] = ET.tostring(stub, encoding="utf-8", xml_declaration=True) + b"\n"
     thumbnails = {name: (delta_root / "thumbnail" / name).read_bytes() for name in THUMBNAILS}
+    stock_html = (vfs_root / EFB_HTML).read_bytes()
+    if stock_html.count(STOCK_EFB_IMPORT) != 1 or b'id="iniEfbA330"' not in stock_html:
+        raise ValueError("Expected the stock A330 EFB loader and template")
+    if WV081_EFB_IMPORT in stock_html:
+        raise ValueError("The EFB loader already includes this mod; supply the pristine stock loader")
+    loader = stock_html.replace(STOCK_EFB_IMPORT, WV081_EFB_IMPORT + b"\n" + STOCK_EFB_IMPORT)
+    extension = (ROOT / "package" / EFB_EXTENSION).read_bytes()
+    stock_wasm_html = (vfs_root / WASM_HTML).read_bytes()
+    if stock_wasm_html.count(STOCK_WASM_IMPORT) != 1 or b'id="WasmInstrument"' not in stock_wasm_html:
+        raise ValueError("Expected the stock WASM instrument loader and template")
+    if WV081_FUEL_IMPORT in stock_wasm_html:
+        raise ValueError("The WASM loader already includes this mod; supply pristine locally cached input")
+    wasm_loader = stock_wasm_html.replace(STOCK_WASM_IMPORT, STOCK_WASM_IMPORT + b"\n" + WV081_FUEL_IMPORT)
+    fuel_extension = (ROOT / "package" / FUEL_EXTENSION).read_bytes()
 
     dist = ROOT / "dist"
     destination = dist / "local-sdk-sources"
-    if dist.resolve().parent != ROOT or destination.resolve().parent != dist.resolve():
+    if dist.resolve().parent != ROOT or destination.resolve() != dist.resolve() / "local-sdk-sources":
         raise ValueError("Prepared sources must remain within this repository's dist directory")
     dist.mkdir(exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".local-sdk-sources-", dir=dist))
@@ -84,37 +113,36 @@ def prepare(vfs_root):
 
     for name, content in stock.items():
         write(Path("reference/rr") / name, content)
-        write(AIRCRAFT / PRESET / name, metadata if name == "config/aircraft.cfg" else content)
+        write(AIRCRAFT / PRESET / name, overrides.get(name, content))
     for name, content in merge_xml.items():
         # The native modular lister omits preset checklist/PNG files; use a separate SDK Copy group.
         base = Path("preset-resources") if name.startswith("checklist/") else AIRCRAFT / PRESET
         write(base / name, content)
     for name, content in thumbnails.items():
         write(Path("preset-resources/thumbnail") / name, content)
+    write(Path("efb-loader") / EFB_HTML.relative_to("html_ui"), loader)
+    write(Path("efb-loader") / EFB_EXTENSION.relative_to("html_ui"), extension)
+    write(Path("efb-loader") / WASM_HTML.relative_to("html_ui"), wasm_loader)
+    write(Path("efb-loader") / FUEL_EXTENSION.relative_to("html_ui"), fuel_extension)
     write(Path("legal/LICENSE"), (ROOT / "LICENSE").read_bytes())
     write(Path("legal/LOCAL-ONLY.txt"), NOTICE.encode("utf-8"))
+    prepare_center_controls(vfs_root, stage / "center-controls")
 
-    # Preserve every non-metadata preset contribution exactly, including camera/navigation files.
+    # Preserve every CFG without an authored delta exactly, including camera/navigation files.
     for name, content in stock.items():
-        if name != "config/aircraft.cfg" and (prepared_preset / name).read_bytes() != content:
+        if name not in overrides and (prepared_preset / name).read_bytes() != content:
             raise ValueError(f"Stock preset contribution changed during preparation: {name}")
 
-    backup = None
+    # Publish only after all inputs are read and staged. The user requested no backups.
     if destination.exists():
-        backup = dist / ("previous-local-sdk-sources-" + stage.name.rsplit("-", 1)[-1])
-        if backup.exists() or destination.resolve().parent != dist.resolve():
-            raise ValueError("Cannot preserve the previous prepared sources safely")
-        destination.rename(backup)
-        print(f"Previous private sources retained: {backup}")
-    try:
-        stage.rename(destination)
-    except OSError:
-        if backup is not None and not destination.exists():
-            backup.rename(destination)
-        raise
+        if destination.resolve() != ROOT / "dist" / "local-sdk-sources":
+            raise ValueError("Refusing to replace prepared sources outside the expected directory")
+        shutil.rmtree(destination)
+    stage.rename(destination)
     print(f"Prepared {len(stock)} stock preset CFG files and {len(merge_xml)} XML merge declarations.")
     print(f"Private sources: {destination}")
     print(f"SDK project: {ROOT / 'A330_WV081_Project.xml'}")
+    print("Shared instrument loaders select the exact WV081 title for EFB warnings and the fuel display prototype.")
     print("No build, install, ZIP, or simulator launch performed. Keep generated sources and SDK output private.")
 
 
