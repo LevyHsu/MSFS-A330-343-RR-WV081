@@ -156,7 +156,23 @@ The EFB extension now intercepts the load request it raises before each amount. 
 
 ECAM colours now use the native green (#60CD63) and amber (#FF8A50), sampled from the stock fuel-page element sheet. The native page builds its pump symbols from tinted square and bar primitives, matching the original SVG shapes. The native digits use the installed A330 `data/fonts/inidisplayini-regular.ttf`, which the HTML layer cannot reach at runtime: only `html_ui` is served, and package `data/` and `SimObjects/` URLs return 404. Preparation therefore copies that font from the user's installed aircraft into the private build beside the overlay script, under the same never-redistribute rule as the donor control mesh. The overlay draws it at 21 units, matching the native digit height.
 
+SDK build 025 passed with no new builder diagnostics: 28 payload entries, including the private font. With MSFS closed, v0.3.5 replaced v0.3.4; all 30 installed files match the SDK output.
+
+The v0.3.5 flight trial confirmed sound, the overhead legends and EFB loading:
+- **Load:** a 109.2 t load filled every tank, with the centre at 32,609 kg.
+- **Takeoff and climb:** the engines drew only from the inner tanks.
+- **Automatic transfer:** with both CTR pumps on and XFR in AUTO, the left transfer began climbing through FL297, when its inner tank reached 30,955 kg. The right followed at 30,957 kg. Over the first 52 s the centre fell 229 kg and the inner tanks rose; total fuel fell only by engine burn (124 kg, about 2.4 kg/s), so the transfer conserved fuel.
+
+That trial also found the stock `L:INI_TOTAL_FUEL_WEIGHT` left at 500 kg, from the EFB's drain step, because routed loads bypass the stock loader. The controller now writes the routed total there. The EFB's takeoff-performance SYNC reads the stock `L:FMGS_TAKEOFF_WEIGHT`, which the FMS derives from its INIT B ZFW and block fuel. A 100 t block entry therefore synced 231.7 t while the aircraft weighed about 241 t; the cause was the block entry, not the mod.
+
 At takeoff the engines continue to draw from the inner tanks. AUTO centre transfer begins in flight once an inner tank is about 2,000 kg below full; with full inner tanks that is roughly 10–15 minutes after takeoff thrust.
+
+## v0.3.6 ECAM centre section copied from the A330-200
+
+The v0.3.5 centre section still differed from the stock -200 page in shape and digit weight. It was measured again on the live -200 page with magenta overlays and screenshots of each pump state:
+- **Background:** the native page draws its 768-pixel background about 6 px right of the gauge origin and unscaled vertically. The added tank bottom line now spans gauge x 313–474, meeting the native tank sides.
+- **Pumps:** 41 × 41 squares with a 2 px stroke, matching the native element-sheet square, centred at gauge x 366.3 and 413.7, y 265.7. The idle cross-line is 28 units long. While transferring, each pump's line runs in line from the top of its square down to a transfer line at y 311.2, spanning x 348–432, as the -200 draws with CTR XFR in MAN.
+- **Quantity:** `inidisplayini` at 23 units, centred at x 388.6 on a 352.6 baseline, with a 0.4-unit outline in the same colour. Test strings on the live page matched the native digits' 130 × 34 px size; the native stroke weight lies between plain text and a 0.7-unit outline. Coherent GT ignored `font-weight: bold`, and drew no SVG text that also had opacity attributes.
 
 ## Prepare private SDK sources
 

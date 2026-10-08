@@ -9,6 +9,8 @@
     const GREEN = "#60cd63";
     const AMBER = "#ff8a50";
     const EDGE = "#cdced0";
+    const PUMP_Y = 265.7; // Centre line of the native -200 centre pump squares, in gauge pixels.
+    const TRANSFER_Y = 311.2; // Native -200 transfer line under the centre pumps.
     const states = new WeakMap();
 
     // Measured on the installed A330-200 (package 0.0.53): each centre pump moves about
@@ -198,10 +200,13 @@
             return false;
         }
         controller.refuelSequence = sequence;
-        const targets = refuelTargets(local("WV081_FUEL_TARGET_KG"), kilogramsPerGallon);
+        const requestKg = local("WV081_FUEL_TARGET_KG");
+        const targets = refuelTargets(requestKg, kilogramsPerGallon);
         if (!targets) {
             return false;
         }
+        // The stock loader records each load here; keep that record correct for the routed amount.
+        SimVar.SetSimVarValue("L:INI_TOTAL_FUEL_WEIGHT", "number", requestKg);
         controller.dueLeft = controller.dueRight = 0;
         begin(towards(targets, kilogramsPerGallon), null, targets);
         return true;
@@ -289,8 +294,8 @@
         return element;
     }
 
-    // Original drawing of the -200 centre section, aligned against the live stock -200 page. The native
-    // page draws its 768-pixel background unscaled in the 780-pixel gauge, so this uses gauge pixels.
+    // Original drawing of the -200 centre section, measured against the live stock -200 page in gauge
+    // pixels. The native page draws its 768-pixel background about 6 px right of the gauge origin.
     function createLayer(instrument) {
         const frame = instrument.querySelector("#Mainframe");
         if (!frame) {
@@ -305,28 +310,30 @@
         // The private build copies the installed A330 ECAM font next to this script.
         add(svg, "style", {}, "@font-face{font-family:'WV081 ECAM';"
             + "src:url('/Pages/VCockpit/Instruments/a330-wv081-fuel/inidisplayini-regular.ttf');}");
-        add(svg, "line", { x1: 309, y1: 367, x2: 466, y2: 367, stroke: EDGE, "stroke-width": 4 });
-        const pumps = [367, 411].map(centre => {
-            const group = add(svg, "g", { fill: "none", "stroke-width": 2.5 });
-            const box = add(group, "rect", { x: centre - 20, y: 250, width: 40, height: 32 });
+        add(svg, "line", { x1: 313, y1: 367, x2: 474, y2: 367, stroke: EDGE, "stroke-width": 4 });
+        const pumps = [366.3, 413.7].map(centre => {
+            const group = add(svg, "g", { fill: "none", "stroke-width": 2 });
+            const box = add(group, "rect", { x: centre - 20.5, y: PUMP_Y - 20.5, width: 41, height: 41 });
             const bar = add(group, "line", {});
             return { centre, box, bar };
         });
+        const transfer = add(svg, "line", { x1: 348, y1: TRANSFER_Y, x2: 432, y2: TRANSFER_Y, "stroke-width": 2 });
         const quantity = add(svg, "text", {
-            x: 393, y: 349, "font-size": 21, "font-family": "'WV081 ECAM', Roboto, sans-serif",
-            "text-anchor": "middle", fill: GREEN
+            x: 388.6, y: 352.6, "font-size": 23, "font-family": "'WV081 ECAM', Roboto, sans-serif",
+            "text-anchor": "middle", fill: GREEN, stroke: GREEN, "stroke-width": 0.4 // Native digit weight.
         }, "---");
-        return { svg, pumps, quantity };
+        return { svg, pumps, transfer, quantity };
     }
 
-    // Selected and powered pumps are green, otherwise amber; the bar is in line only while transferring.
+    // Selected and powered pumps are green, otherwise amber. While transferring the bar turns in line
+    // and runs down to the transfer line, as on the -200 page.
     function showPump(pump, available, transferring) {
         const colour = available ? GREEN : AMBER;
         pump.box.setAttribute("stroke", colour);
         pump.bar.setAttribute("stroke", colour);
         const attributes = transferring
-            ? { x1: pump.centre, y1: 250, x2: pump.centre, y2: 282 }
-            : { x1: pump.centre - 20, y1: 266, x2: pump.centre + 20, y2: 266 };
+            ? { x1: pump.centre, y1: PUMP_Y - 20.5, x2: pump.centre, y2: TRANSFER_Y }
+            : { x1: pump.centre - 14, y1: PUMP_Y, x2: pump.centre + 14, y2: PUMP_Y };
         Object.keys(attributes).forEach(key => pump.bar.setAttribute(key, attributes[key]));
     }
 
@@ -374,10 +381,15 @@
         const quantity = metric === 0 ? kilograms * 2.20462 : kilograms;
         const fault = local("WV081_CTR_STATUS") > 0;
         state.quantity.textContent = validQuantity && unitKnown ? String(Math.round(quantity / 10) * 10) : "XX";
-        state.quantity.setAttribute("fill", fault || !(validQuantity && unitKnown) ? AMBER : GREEN);
+        const quantityColour = fault || !(validQuantity && unitKnown) ? AMBER : GREEN;
+        state.quantity.setAttribute("fill", quantityColour);
+        state.quantity.setAttribute("stroke", quantityColour);
         // Transfer states come from this controller; the stock -300 clears its own centre flags.
-        showPump(state.pumps[0], local("WV081_CTR_L_PUMP_ON") === 1, local("WV081_CTR_L_FEEDING") === 1);
-        showPump(state.pumps[1], local("WV081_CTR_R_PUMP_ON") === 1, local("WV081_CTR_R_FEEDING") === 1);
+        const leftFeeding = local("WV081_CTR_L_FEEDING") === 1;
+        const rightFeeding = local("WV081_CTR_R_FEEDING") === 1;
+        showPump(state.pumps[0], local("WV081_CTR_L_PUMP_ON") === 1, leftFeeding);
+        showPump(state.pumps[1], local("WV081_CTR_R_PUMP_ON") === 1, rightFeeding);
+        state.transfer.setAttribute("stroke", leftFeeding || rightFeeding ? GREEN : "none");
         state.svg.style.display = "block";
     }
 
