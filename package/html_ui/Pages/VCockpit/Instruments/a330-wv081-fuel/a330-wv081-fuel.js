@@ -73,15 +73,14 @@
         return local("INI_IS_200") === 0
             && local("INI_ECAM_ACTIVE_PAGE") === 8
             && local("ECAM_CURRENT_STATUS") > 0
-            && local("INI_ECAM_VALID") === 1
+            && local("INI_ECAM_VALID") === 0 // Stock: 0 normal, 1 self-test, 2 invalid data.
             && local("INI_ELEC_AC_BUS_1_IS_POWERED") === 1
             && local("ECAM_BRIGHTNESS_ACT") > 0
             && local("INI_ECAM_DMC_MODE") === 1
             && local("INI_ECAM_ND_NORM_MODE") === 1
             && local("INI_EWD_ECAM_TFR") === 0
             && local("INI_ECAM_OVERRIDE_EWD") === 0
-            && local("INI_ECAM_VIDEO_STATE") === 0
-            && local("INI_CKPT_DOOR_VIDEO") === 0;
+            && local("INI_ECAM_VIDEO_STATE") === 0;
     }
 
     function updateLayer(instrument) {

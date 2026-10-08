@@ -2,7 +2,7 @@
 
 A community-driven, completely free delta mod targeting the Rolls-Royce-powered A330-343 WV081, a 242-tonne high-gross-weight version of the default Microsoft/iniBuilds A330-300 (RR) for Microsoft Flight Simulator 2024.
 
-**Status:** v0.3.1 passed SDK packaging and is installed locally to correct the v0.3.0 systems-startup failure. It uses the original installed systems module and retains donor overhead controls, provisional ECAM indications and ZFW entry through 175t with a red warning above 171t. Centre refuelling/transfer is not implemented; adding capacity does not activate it. In-game power-up and control rendering still need confirmation. Later-production exterior details follow fuel integration. No public release is available. See the [private development workflow](package/README.md).
+**Status:** v0.3.1 passed SDK packaging and is installed locally to correct the v0.3.0 systems-startup failure. The user's WV081 screenshots now show powered native displays. The prototype uses the original installed systems module and retains ZFW entry through 175t with a red warning above 171t. Donor overhead controls and the provisional centre indication still need correction. Centre refuelling/transfer is not implemented; adding capacity does not activate it. Later-production exterior details follow fuel integration. No public release is available. See the [private development workflow](package/README.md).
 
 ## Requirements and scope
 
