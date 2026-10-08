@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<AssetPackage Version="0.3.1">
+<AssetPackage Version="0.3.5">
     <ItemSettings>
         <ContentType>AIRCRAFT</ContentType>
         <Title>A330 WV081 Community - RR Centre-Fuel Prototype</Title>
@@ -39,11 +39,6 @@
             <Type>Copy</Type>
             <AssetDir>dist\local-sdk-sources\legal\</AssetDir>
             <OutputDir>.</OutputDir>
-        </AssetGroup>
-        <AssetGroup Name="CenterControls">
-            <Type>Copy</Type>
-            <AssetDir>dist\local-sdk-sources\center-controls\SimObjects\Airplanes\microsoft-a330\</AssetDir>
-            <OutputDir>SimObjects\Airplanes\microsoft-a330\</OutputDir>
         </AssetGroup>
     </AssetGroups>
     <GloballyOverridenBaseSimFiles>

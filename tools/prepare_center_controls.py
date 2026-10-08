@@ -10,6 +10,7 @@ import copy
 import json
 import math
 from pathlib import Path, PureWindowsPath
+import struct
 import xml.etree.ElementTree as ET
 
 
@@ -23,6 +24,17 @@ CONTROLS = {
     "FUEL_CTR_R": "INI_CENTER_TANK_RIGHT",
     "FUEL_CTR_XFR": "INI_CENTER_TANK_FUEL_XFR",
 }
+# The A333 fuel-panel face has no centre-button holes and lies 0.91-0.94 mm in front of the
+# aligned donor roots; pressed korry faces sit 1.06 mm behind them. Lift the controls clear.
+OUTWARD_OFFSET_M = 0.0023
+# CTR, TANK, L, R, XFR and AUTO lettering around the donor buttons, in mm from the XFR root.
+# The nearby T TANK MODE/FEED and ISOL legends label controls the A333 already has.
+LEGEND_NODE = "INT_DECAL_LIGHTS"
+LEGEND_REGION_MM = ((-45.0, 45.0), (-21.0, 12.0))
+LEGEND_TRIANGLES = 12
+# Donor lettering sits 0.65 mm above its own face; keep that clearance above the higher A333 face.
+LEGEND_OFFSET_M = 0.0009
+LEGEND_LIGHT = "(L:INI_AC_LIGHTS_FAILURE, Bool) (L:INI_POTENTIOMETER_15, Number) 100 / *"
 NOTICE = (
     "LOCAL BUILD ONLY - DO NOT REDISTRIBUTE\n"
     "This attachment contains selected geometry, animations and material metadata\n"
@@ -97,6 +109,22 @@ def accessor_data(gltf, index, vfs_root, model_dir):
     if len(packed) != count * item_size:
         raise ValueError(f"Incomplete cached accessor: {index}")
     return packed
+
+
+def outward_axis(gltf, vfs_root, model_dir):
+    """Unit vector toward the crew, opposite to the donor pushbutton press travel."""
+    animation = next(a for a in gltf["animations"] if a.get("name") == "FUEL_CTR_XFR")
+    channel = next(c for c in animation["channels"] if c["target"]["path"] == "translation")
+    output = animation["samplers"][channel["sampler"]]["output"]
+    if gltf["accessors"][output]["componentType"] != 5126 or gltf["accessors"][output]["type"] != "VEC3":
+        raise ValueError("Unexpected donor press-animation format")
+    values = struct.unpack(f"<{gltf['accessors'][output]['count'] * 3}f", accessor_data(gltf, output, vfs_root, model_dir))
+    travel = [values[-3 + i] - values[i] for i in range(3)]
+    length = math.hypot(*travel)
+    axis = [-component / length for component in travel] if length > 0.001 else [0, 0, 0]
+    if axis[1] > -0.5:
+        raise ValueError("Donor press travel does not point into the downward-facing overhead panel")
+    return axis
 
 
 def texture_indices(value):
@@ -198,13 +226,107 @@ def subset_mesh(source, translation, vfs_root, model_dir):
         accessors.append(accessor)
         payload.extend(packed)
     roots = [i for i, node in enumerate(nodes) if node["name"] in CONTROLS]
-    nodes.append({"name": "WV081_CENTER_CONTROLS_ALIGNMENT", "translation": translation, "children": roots})
+    # The SDK validator rejects any node without an ID once ASOBO_unique_id is in use.
+    nodes.append({
+        "name": "WV081_CENTER_CONTROLS_ALIGNMENT", "translation": translation, "children": roots,
+        "extensions": {"ASOBO_unique_id": {"id": "x0_WV081_CENTER_CONTROLS_ALIGNMENT"}},
+    })
     result = {
         "asset": copy.deepcopy(source["asset"]), "scene": 0, "scenes": [{"nodes": [len(nodes) - 1]}],
         "nodes": nodes, "meshes": meshes, "animations": animations, "materials": materials,
         "textures": textures, "images": images, "accessors": accessors, "bufferViews": views,
         "buffers": [{"uri": "center_controls.bin", "byteLength": len(payload)}],
     }
+    return result, payload
+
+
+def add_legends(result, payload, source, translation, outward, vfs_root, model_dir):
+    """Append the donor CTR legend decals, selected by triangle centroid around the XFR button."""
+    found = [i for i, node in enumerate(source["nodes"]) if node.get("name") == LEGEND_NODE]
+    parents = {child for node in source["nodes"] for child in node.get("children", [])}
+    if len(found) != 1 or found[0] in parents:
+        raise ValueError("Expected one root donor lettering node")
+    donor_node = source["nodes"][found[0]]
+    if "matrix" in donor_node or donor_node.get("rotation", [0, 0, 0, 1]) != [0, 0, 0, 1] or "scale" in donor_node:
+        raise ValueError("Donor lettering node needs a full transform; refusing an approximate placement")
+    primitives = source["meshes"][donor_node["mesh"]]["primitives"]
+    if len(primitives) != 1 or "targets" in primitives[0] or "extensions" in primitives[0]:
+        raise ValueError("Unexpected donor lettering primitive")
+    primitive = primitives[0]
+    unpack = lambda index, fmt: struct.unpack(f"<{len(accessor_data(source, index, vfs_root, model_dir)) // struct.calcsize(fmt)}{fmt}",
+                                              accessor_data(source, index, vfs_root, model_dir))
+    index_format = {5123: "H", 5125: "I"}[source["accessors"][primitive["indices"]]["componentType"]]
+    indices = unpack(primitive["indices"], index_format)
+    if source["accessors"][primitive["attributes"]["POSITION"]]["componentType"] != 5126:
+        raise ValueError("Unexpected donor lettering position format")
+    flat = unpack(primitive["attributes"]["POSITION"], "f")
+    positions = [flat[i:i + 3] for i in range(0, len(flat), 3)]
+    root = world_translation(source, "FUEL_CTR_XFR")
+    up_length = math.hypot(outward[1], outward[2])
+    up = [0.0, outward[2] / up_length, -outward[1] / up_length]
+    (x_low, x_high), (v_low, v_high) = LEGEND_REGION_MM
+    selected = []
+    for t in range(len(indices) // 3):
+        triangle = indices[3 * t:3 * t + 3]
+        centroid = [donor_node["translation"][k] + sum(positions[v][k] for v in triangle) / 3 - root[k] for k in range(3)]
+        lateral, vertical = centroid[0] * 1000, sum(c * u for c, u in zip(centroid, up)) * 1000
+        if x_low < lateral < x_high and v_low < vertical < v_high:
+            selected.append(triangle)
+    if len(selected) != LEGEND_TRIANGLES:
+        raise ValueError(f"Expected {LEGEND_TRIANGLES} donor CTR legend triangles, found {len(selected)}")
+    vertices = sorted({v for triangle in selected for v in triangle})
+    remap = {old: new for new, old in enumerate(vertices)}
+
+    def append(data, target, template):
+        payload.extend(b"\0" * (-len(payload) % 4))
+        result["bufferViews"].append({"buffer": 0, "byteOffset": len(payload), "byteLength": len(data), "target": target})
+        payload.extend(data)
+        accessor = {key: value for key, value in template.items() if key not in ("min", "max", "sparse", "byteOffset")}
+        accessor["bufferView"] = len(result["bufferViews"]) - 1
+        result["accessors"].append(accessor)
+        return len(result["accessors"]) - 1, accessor
+
+    attributes = {}
+    for name, index in primitive["attributes"].items():
+        template = source["accessors"][index]
+        packed = accessor_data(source, index, vfs_root, model_dir)
+        item = len(packed) // template["count"]
+        data = b"".join(packed[v * item:(v + 1) * item] for v in vertices)
+        attributes[name], accessor = append(data, 34962, dict(template, count=len(vertices)))
+        if name == "POSITION":
+            accessor["min"] = [min(positions[v][k] for v in vertices) for k in range(3)]
+            accessor["max"] = [max(positions[v][k] for v in vertices) for k in range(3)]
+    index_data = struct.pack(f"<{len(selected) * 3}H", *(remap[v] for triangle in selected for v in triangle))
+    index_accessor, _ = append(index_data, 34963, {"componentType": 5123, "count": len(selected) * 3, "type": "SCALAR"})
+    material = copy.deepcopy(source["materials"][primitive["material"]])
+    texture_map = {}
+    for old in sorted(set(texture_indices(material))):
+        texture = copy.deepcopy(source["textures"][old])
+        if "sampler" in texture or "extensions" in texture:
+            raise ValueError("Donor lettering texture needs an unsupported sampler or extension")
+        image = copy.deepcopy(source["images"][texture["source"]])
+        image["uri"] = PureWindowsPath(image["uri"]).name.lower()
+        result["images"].append(image)
+        texture["source"] = len(result["images"]) - 1
+        result["textures"].append(texture)
+        texture_map[old] = len(result["textures"]) - 1
+    remap_textures(material, texture_map)
+    result["materials"].append(material)
+    result["meshes"].append({"name": "WV081_CTR_LEGENDS", "primitives": [{
+        "attributes": attributes, "indices": index_accessor, "material": len(result["materials"]) - 1}]})
+    result["nodes"].append({
+        "name": "WV081_CTR_LEGENDS", "mesh": len(result["meshes"]) - 1, "translation": donor_node["translation"],
+        "extensions": {"ASOBO_unique_id": {"id": "x0_WV081_CTR_LEGENDS"}},
+    })
+    result["nodes"].append({
+        "name": "WV081_CTR_LEGENDS_ALIGNMENT", "translation": translation, "children": [len(result["nodes"]) - 1],
+        "extensions": {"ASOBO_unique_id": {"id": "x0_WV081_CTR_LEGENDS_ALIGNMENT"}},
+    })
+    result["scenes"][0]["nodes"].append(len(result["nodes"]) - 1)
+    return len(selected)
+
+
+def finish_gltf(result, payload):
     extensions = set()
 
     def collect_extensions(value):
@@ -218,6 +340,7 @@ def subset_mesh(source, translation, vfs_root, model_dir):
 
     collect_extensions(result)
     result["extensionsUsed"] = sorted(extensions)
+    result["buffers"][0]["byteLength"] = len(payload)
     return result, bytes(payload)
 
 
@@ -242,6 +365,16 @@ def model_xml():
             state + " (L:INI_ANNLT_SWITCH, Number) 0 == or"
             " (L:INI_GENERAL_LIGHT_MULTIPLIER, Number) * (L:INI_AC_LIGHTS_FAILURE, Bool) *"
         )
+    # Legends follow the stock overhead lettering's integral-lighting potentiometer.
+    legends = ET.SubElement(behaviors, "Component", {"ID": "WV081_CTR_LEGENDS", "Node": "WV081_CTR_LEGENDS"})
+    lighting = ET.SubElement(legends, "UseTemplate", {"Name": "ASOBO_GT_Material_Emissive_Code"})
+    ET.SubElement(lighting, "NODE_ID").text = "WV081_CTR_LEGENDS"
+    ET.SubElement(lighting, "EMISSIVE_CODE").text = LEGEND_LIGHT
+    # Runtime evidence that this attachment and its behaviors actually loaded.
+    loaded = ET.SubElement(behaviors, "Component", {"ID": "WV081_CENTER_CONTROLS_LOADED"})
+    update = ET.SubElement(loaded, "UseTemplate", {"Name": "ASOBO_GT_Update"})
+    ET.SubElement(update, "FREQUENCY").text = "1"
+    ET.SubElement(update, "UPDATE_CODE").text = "1 (>L:WV081_CTR_CONTROLS_LOADED, Bool)"
     ET.indent(model)
     return ET.tostring(model, encoding="utf-8", xml_declaration=True) + b"\n"
 
@@ -265,7 +398,12 @@ def prepare(vfs_root, output_root=None):
         residuals[name] = math.dist([a + b for a, b in zip(original, translation)], target)
     if max(residuals.values()) > 0.002:
         raise ValueError("Shared overhead controls disagree by more than 2 mm after alignment")
+    outward = outward_axis(donor, vfs_root, donor_dir)
+    legend_translation = [t + LEGEND_OFFSET_M * n for t, n in zip(translation, outward)]
+    translation = [t + OUTWARD_OFFSET_M * n for t, n in zip(translation, outward)]
     mesh, payload = subset_mesh(donor, translation, vfs_root, donor_dir)
+    legend_triangles = add_legends(mesh, payload, donor, legend_translation, outward, vfs_root, donor_dir)
+    mesh, payload = finish_gltf(mesh, payload)
     texture_dependencies = []
     for image in mesh["images"]:
         relative = STOCK / "asset_a330_common/texture.cockpit" / (image["uri"] + ".ktx2")
@@ -292,8 +430,10 @@ def prepare(vfs_root, output_root=None):
         "meshes": len(mesh["meshes"]), "animations": len(mesh["animations"]),
         "materials": len(mesh["materials"]), "accessors": len(mesh["accessors"]), "mesh_bytes": len(payload),
         "alignment_metres": translation, "alignment_residual_metres": residuals,
+        "outward_offset_metres": OUTWARD_OFFSET_M, "outward_axis": outward,
+        "legend_triangles": legend_triangles, "legend_offset_metres": LEGEND_OFFSET_M,
         "control_variables": CONTROLS, "texture_dependencies": texture_dependencies,
-        "scope": "Additive controls only; no fuel writer, variant flag, existing cockpit replacement or ECAM change.",
+        "scope": "Additive controls and their CTR legends only; no variant flag or existing cockpit replacement.",
         "limits": "Unverified SDK/runtime loading. Uses installed converted textures. Direct L-variable click bindings; donor B-event/tooltips and Wwise click triggers are not reproduced.",
         "redistribution": "Private stock-derived output; do not redistribute.",
     }

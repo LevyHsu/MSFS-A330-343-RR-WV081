@@ -4,7 +4,10 @@
     "use strict";
 
     const AIRCRAFT_TITLE = "A330 WV081 Community - A330-300 (RR) Baseline";
-    const VERSION = "0.3.1";
+    const VERSION = "0.3.5";
+    const FUEL_TANKS = ["LEFT MAIN", "RIGHT MAIN", "LEFT AUX", "RIGHT AUX", "EXTERNAL1", "CENTER"];
+    // A330-200 refuel schedule: trim holds 2,400 kg when the wings are full, before any centre fuel.
+    const CENTRE_BASE_TRIM_KG = 2400;
     const MAX_ZFW_KG = 171000;
     const INPUT_MAX_ZFW_KG = 175000;
     const MAX_RAMP_KG = 242900;
@@ -50,7 +53,7 @@
                 && record.payload.maxFuelKg > 0 && Number.isFinite(minimum)
                 && minimum > 0 && minimum <= MAX_ZFW_KG && (units === "kg" || units === "lb");
         });
-        status(state, state.ready ? `WV081 v${VERSION}: maximum ZFW 171 t; entry to 175 t allowed for SimBrief. Centre transfer is not active.`
+        status(state, state.ready ? `WV081 v${VERSION}: maximum ZFW 171 t; entry to 175 t allowed for SimBrief. Fuel above full wings fills the centre tank.`
             : "WV081 loading unavailable: waiting for aircraft weight data.", state.ready ? "ready" : "error");
     }
 
@@ -143,6 +146,62 @@
         return payload.minZFWKg;
     }
 
+    function capacityKg(tanks) {
+        const kilogramsPerGallon = SimVar.GetSimVarValue("FUEL WEIGHT PER GALLON", "kilograms");
+        return tanks.reduce((sum, tank) => sum + SimVar.GetSimVarValue(`FUEL TANK ${tank} CAPACITY`, "gallons"), 0) * kilogramsPerGallon;
+    }
+
+    // Include the centre tank in the entry limit only when the simulator reports its capacity.
+    function totalFuelCapacityKg(stockMaximum) {
+        try {
+            const total = capacityKg(FUEL_TANKS);
+            return capacityKg(["CENTER"]) > 0 && Number.isFinite(total) && !(total <= stockMaximum) ? total : stockMaximum;
+        } catch (_) {
+            return stockMaximum;
+        }
+    }
+
+    // The stock -300 load puts everything above full wings into the trim tank, even beyond its
+    // capacity. Loads above full wings plus the A330-200 base trim fuel therefore go to
+    // a330-wv081-fuel.js, which places the whole split in one step; smaller loads stay stock.
+    function routeCentreFuelLoad() {
+        const stockSet = SimVar.SetSimVarValue;
+        if (typeof stockSet !== "function" || stockSet.wv081Routed) {
+            return;
+        }
+        let heldRequest = null;
+        const routed = function (name, unit, value, ...rest) {
+            const wv081 = readTitle({ simReady: true }) === AIRCRAFT_TITLE;
+            // The EFB raises its load request just before the amount; hold it until the amount is known.
+            if (wv081 && name === "L:INI_EFB_FUEL_LOAD_REQ" && value === 1) {
+                heldRequest = () => stockSet.call(this, name, unit, value, ...rest);
+                Promise.resolve().then(() => {
+                    if (heldRequest) {
+                        heldRequest();
+                        heldRequest = null;
+                    }
+                });
+                return Promise.resolve();
+            }
+            if (wv081 && name === "K:INIB.SET_FUEL") {
+                const request = heldRequest;
+                heldRequest = null;
+                if (capacityKg(["CENTER"]) > 0 && value > capacityKg(FUEL_TANKS.slice(0, 4)) + CENTRE_BASE_TRIM_KG) {
+                    // A new sequence value marks each request, including a repeat of the same amount.
+                    // L-vars lose values as large as Date.now() (read back as 0), so keep it below 1e9.
+                    stockSet.call(this, "L:WV081_FUEL_TARGET_KG", "number", value);
+                    return stockSet.call(this, "L:WV081_FUEL_TARGET_SEQ", "number", Date.now() % 1000000000 + 1);
+                }
+                if (request) {
+                    request();
+                }
+            }
+            return stockSet.call(this, name, unit, value, ...rest);
+        };
+        routed.wv081Routed = true;
+        SimVar.SetSimVarValue = routed;
+    }
+
     function canLoad(record, state) {
         state.title = readTitle(state);
         if (state.title === null) {
@@ -194,6 +253,8 @@
             return;
         }
         adapted.add(payload);
+        // Install after the stock bundle, which defines its own SimVar.SetSimVarValue.
+        routeCentreFuelLoad();
         const state = stateFor(instrument);
         const calculate = payload.calculatePlannedWeight;
         const apply = payload.applyPlannedLoad;
@@ -212,7 +273,13 @@
             get: () => state.title === AIRCRAFT_TITLE ? INPUT_MAX_ZFW_KG : stockMaximum,
             set: value => { stockMaximum = value; },
         });
-        // Retain the stock fuel-entry maximum until centre loading has a working controller.
+        let stockFuelMaximum = payload.maxFuelKg;
+        Object.defineProperty(payload, "maxFuelKg", {
+            configurable: true,
+            enumerable: true,
+            get: () => state.title === AIRCRAFT_TITLE ? totalFuelCapacityKg(stockFuelMaximum) : stockFuelMaximum,
+            set: value => { stockFuelMaximum = value; },
+        });
         payload.calculatePlannedWeight = function (...args) {
             state.title = readTitle(state);
             if (state.title === AIRCRAFT_TITLE) {

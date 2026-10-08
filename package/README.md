@@ -91,6 +91,73 @@ Centre refuelling/transfer is not implemented in this correction. The EFB retain
 
 SDK build 020 passed with no new builder diagnostics. Its 32 files and 30-entry payload layout preserve all three original attachments, add only the control attachment and contain no replacement panel/native module or module data. All 15 Copy-group files and 13 preset CFGs match preparation. With MSFS closed, the 32 current files were installed and match the SDK output. Subsequent cleanup removed the 137 obsolete v0.3.0 files; the remaining 32 files match the current layout and the active attachment map references the original installed interior. No backup or normal simulator launch was performed. Runtime recovery remains unverified.
 
+## v0.3.2 centre-fuel controller candidate
+
+On 2026-10-08, live tests through the simulator's Coherent debugger (developer mode, port 19999) measured the stock fuel loop on the installed A330-200 and WV081. Results:
+- **Stock fuel loop:** it checks about twice a second. It adopts simulator tank quantities only when total fuel changes by more than about 50 kg (15 gal rejected, 20 gal adopted). Smaller changes and pure redistributions are overwritten. Its `INI_FUEL_WEIGHT_*` variables report the kept quantities. Fuel-used counters did not change.
+- **A330-200 transfer:** with both centre pumps and MAN transfer selected, it moves about 3,375 US gal/h into each inner tank. AUTO transfer begins 2,000 kg below inner capacity.
+- **APU feed:** the APU draws only from the left inner tank.
+
+The original `a330-wv081-fuel.js` now hosts a controller on the stock Systems gauge for the exact WV081 title:
+- **Pumps:** a centre pump runs when its pushbutton is selected and AC bus 1 (left) or 2 (right) is powered.
+- **Transfer:** the manual XFR selection is required up to the takeoff phase, as in the stock -200 logic. Transfers are written in verified steps that each change total fuel enough to be adopted, so the stock systems never see a pure redistribution. Rejected parts are planned again; no fuel is created or lost. The TCDS 83 L of unusable centre fuel stays in the tank.
+- **EFB loading:** the stock -300 loader puts everything above full wings into the trim tank, even beyond its capacity (28,339 kg observed for a 100 t request). The EFB extension therefore caps the stock request at wings plus trim. After loading settles, the controller applies the A330-200 schedule: trim from 2,400 kg towards capacity, the remainder in the centre tank. A 100 t request produced full wings, 4,239 kg trim and 24,099 kg centre.
+- **ECAM:** the centre indication now shows quantity, the controller's pump and transfer states and an amber fault label. The earlier overlay never appeared because the simulator lowercases gauge names.
+
+Live injection of this source into the running WV081 on the ground verified conserved transfer at the measured rate, AUTO stopping on the ground, refuel distribution and the visible ECAM inset. Still unverified: flight-phase AUTO transfer, engine supply with centre fuel, trim-to-centre forward transfer and the built package.
+
+The donor buttons sat behind the A333 fuel-panel face, which lies 0.91–0.94 mm in front of their aligned roots and has no centre holes. The preparation tool now lifts the group 2.3 mm along the press axis, so pressed korry faces stay about 0.3 mm in front of the face. No legends exist on the donor face texture in that area, so no faceplate copy is needed. The model also sets `L:WV081_CTR_CONTROLS_LOADED` to confirm at runtime that the attachment and its behaviors loaded.
+
+SDK build 021 passed with no new builder diagnostics. Its 32 files and 30-entry payload layout match preparation. With MSFS closed, v0.3.2 replaced v0.3.1 in Community, and all 32 installed files match the SDK output. The built package has not yet been loaded in the simulator. The build tool starts the simulator through Steam, and the launch fails silently while Steam still reports the game as running.
+
+## v0.3.3 sound, checklist and button-loading correction
+
+The first v0.3.2 trial had no aircraft sound, while the simulator and the stock A330 were normal. VFS inspection showed why:
+- The stock RR preset has no sound, AI-sound or checklist files. It inherits common's real files: `sound.xml` (546,673 bytes, with its sound package), `soundai.xml` and the 537,810-byte checklist.
+- Every build since v0.1.2 placed empty `AutoMerge` stubs at those preset paths. The stubs replaced the shared files, silencing the aircraft and blanking its checklist.
+- The cached "stock" sound file used for the stubs was itself an 81-byte stub.
+
+Preparation no longer generates these files.
+
+The CTR buttons never rendered, and their load heartbeat stayed 0. When the attachment was built through the `ModularSimObject` group, the SDK's glTF validator rejected the model: the added alignment node lacked an `ASOBO_unique_id` while the extension was in use. The node now carries an ID. The Copy group is removed, so the SDK compiles and optimises the attachment model (`ASOBO_asset_optimized`, texture URIs resolved to the stock `.PNG.KTX2` files).
+
+The v0.3.2 trial loaded only 76.5 t from a 109.2 t EFB request. The stock -300 never clears `INI_FUEL_EFB_LOADING`, so the controller kept waiting. It now waits for the EFB's own `INI_EFB_IS_REFUELING` and `INI_EFB_IS_LOADING` flags, the load request and a settled total. That trial also confirmed that the engines draw only from the inner tanks: the centre quantity stayed constant through engine start, takeoff and initial climb.
+
+SDK build 022 failed on the unique-ID validation. Build 023 passed with no new builder diagnostics: 27 payload entries. With MSFS closed, the installed package was replaced completely; all 29 files match the SDK output.
+
+## v0.3.4 refuel race, ECAM drawing and CTR legends
+
+The v0.3.3 trial restored sound, and the CTR buttons rendered and responded (`WV081_CTR_CONTROLS_LOADED` = 1). An in-page recorder sampled every 0.25 s and captured a 141.9 t ZFW / 109.2 t fuel instant load:
+1. The EFB drained the tanks to 500 kg.
+2. The controller distributed after 5 s of stable total.
+3. The capped stock load landed at the same moment, about 6 s after the request, and overrode the write.
+4. The controller's retry reapplied its remaining *changes*, calculated from the 500 kg baseline, on top of the new 76.5 t. The result was 185.2 t of fuel and 327 t gross.
+
+Refuelling now keeps absolute per-tank targets and re-plans from the stock-reported split after any rejection. It acts only once the total has reached the capped stock amount and settled for 3 s, and it gives up after 120 s without loading. A live injection of the corrected controller produced the intended sequence: 500 kg, 76,552 kg stock load, then 109,175 kg with every tank full and 251,095 kg gross. A red gross weight above 242,900 kg is the intended ramp-overweight warning.
+
+The ECAM centre indication is redrawn to match the stock A330-200 fuel page:
+- **Outline:** a closing tank edge.
+- **Pumps:** two pump symbols under the top edge, green and in line while transferring, green cross-line when selected but idle, amber cross-line when off or unpowered.
+- **Quantity:** the centre quantity in 10 kg steps.
+
+The native page draws its 768-pixel background unscaled in the 780-pixel gauge, so the layer uses gauge pixels. A magenta test overlay on the live -200 page confirmed the edge, digits and pump positions. Text uses the base simulator's Roboto Mono.
+
+The A333 panel has no CTR legends. The -200's come from its `INT_DECAL_LIGHTS` lettering decals: CTR, TANK, L and R with their flow lines, XFR, and the vertical AUTO — 12 triangles, selected by position around the XFR button. The nearby T TANK MODE/FEED and ISOL decals label controls the A333 already has, so they are excluded. The legends sit 0.9 mm out along the press axis, keeping the donor's 0.65 mm clearance above the higher A333 face, and use the stock overhead-lettering potentiometer for lighting. The stock -200 also shows its centre pumps OFF in the default panel state.
+
+SDK build 024 passed with no new builder diagnostics: 27 payload entries, and the SDK compiled the legend node and lettering textures into the attachment. With MSFS closed, v0.3.4 replaced v0.3.3; all 29 installed files match the SDK output. In-simulator checks of the legends, EFB loading and ECAM drawing are pending.
+
+## v0.3.5 single-step centre refuelling and native ECAM styling
+
+The v0.3.4 trial showed the overhead legends working. Two things still differed:
+- **Refuelling:** a dry 90 t instant load still stepped from 121.4 t (the stock drain to 500 kg) to 197.5 t (the capped stock load) and then 211.0 t (the controller top-up).
+- **ECAM:** the colours and digits differed from the native page.
+
+The EFB extension now intercepts the load request it raises before each amount. Amounts above full wings plus the 2,400 kg base trim fuel no longer reach the stock loader. Instead it writes `L:WV081_FUEL_TARGET_KG` with a new `L:WV081_FUEL_TARGET_SEQ`, and the controller places the whole A330-200 split in one verified step; gradual EFB modes send one request per step. Smaller amounts, including the stock drain to 500 kg, stay stock. The first live attempt used `Date.now()` as the sequence. The simulator read that back as 0, while values up to 3,000,000,000 survived, so the sequence now stays below 1e9. A live 90 t load then produced full wings, 3,530 kg trim and 14,810 kg centre.
+
+ECAM colours now use the native green (#60CD63) and amber (#FF8A50), sampled from the stock fuel-page element sheet. The native page builds its pump symbols from tinted square and bar primitives, matching the original SVG shapes. The native digits use the installed A330 `data/fonts/inidisplayini-regular.ttf`, which the HTML layer cannot reach at runtime: only `html_ui` is served, and package `data/` and `SimObjects/` URLs return 404. Preparation therefore copies that font from the user's installed aircraft into the private build beside the overlay script, under the same never-redistribute rule as the donor control mesh. The overlay draws it at 21 units, matching the native digit height.
+
+At takeoff the engines continue to draw from the inner tanks. AUTO centre transfer begins in flight once an inner tank is about 2,000 kg below full; with full inner tanks that is roughly 10–15 minutes after takeoff thrust.
+
 ## Prepare private SDK sources
 
 The workflow prepares the current source candidate from the installed RR preset, donor controls and instrument loaders. The distributed project contains only original preparation tools, configuration deltas, instrument extensions and thumbnails. Stock-derived configuration, model extracts and HTML stay in ignored local build files and must not be redistributed. The installed aircraft retains ownership of its native systems module and data.

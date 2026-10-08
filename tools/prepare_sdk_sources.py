@@ -23,22 +23,24 @@ CFG_FILES = (
     "navigation_graph/navigation_graph_pilot.cfg",
     "navigation_graph/navigation_graph_preflight.cfg",
 )
-MERGE_XML_FILES = (
-    "sound/sound.xml", "soundai/soundai.xml", "checklist/a330-300_checklist.xml",
-)
+# The stock RR preset has no sound, AI-sound or checklist files and inherits common. Empty preset
+# stubs replaced those files (a silent aircraft and blank checklist), so none is generated.
 THUMBNAILS = ("thumbnail.png", "thumbnail_button.png", "thumbnail_side.png")
 DELTA_CFG_FILES = ("config/aircraft.cfg", "config/flight_model.cfg", "config/attached_objects.cfg")
 EFB_HTML = Path("html_ui/Pages/VCockpit/Instruments/ini-efb-a330/ini-efb-a330.html")
 EFB_EXTENSION = Path("html_ui/Pages/VCockpit/Instruments/a330-wv081-efb/a330-wv081-efb.js")
 WASM_HTML = Path("html_ui/Pages/VCockpit/Instruments/WasmInstrument/WasmInstrument.html")
 FUEL_EXTENSION = Path("html_ui/Pages/VCockpit/Instruments/a330-wv081-fuel/a330-wv081-fuel.js")
+# The native ECAM digits use this installed A330 font, which is outside html_ui at runtime.
+STOCK_ECAM_FONT = Path("data/fonts/inidisplayini-regular.ttf")
+ECAM_FONT_CACHE = ROOT / "dist/cached-a330-module-data/0.0.53"
 STOCK_EFB_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/ini-efb-a330/ini-efb-a330.js"></script>'
 WV081_EFB_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/a330-wv081-efb/a330-wv081-efb.js"></script>'
 STOCK_WASM_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/WasmInstrument/WasmInstrument.js"></script>'
 WV081_FUEL_IMPORT = b'<script type="text/html" import-script="/Pages/VCockpit/Instruments/a330-wv081-fuel/a330-wv081-fuel.js"></script>'
 NOTICE = (
     "LOCAL BUILD ONLY - DO NOT REDISTRIBUTE\n\n"
-    "This tree contains configuration, instrument loaders and model data derived from the user's installed A330.\n"
+    "This tree contains configuration, instrument loaders, model data and an ECAM font from the user's installed A330.\n"
     "Stock-derived material retains its original rights and is not covered by the\n"
     "project's CC BY-NC-SA 4.0 license. That license covers original project contributions only.\n"
     "Keep this prepared source and any SDK output private. Distribute only the original\n"
@@ -77,11 +79,6 @@ def prepare(vfs_root):
     if "SIM_ATTACHMENT.3" in read_config(stock["config/attached_objects.cfg"]):
         raise ValueError("Stock attachment slot 3 is occupied; review the centre-control attachment delta")
     overrides = {name: merge_config(stock[name], (delta_root / name).read_bytes()) for name in DELTA_CFG_FILES}
-    merge_xml = {}
-    for name in MERGE_XML_FILES:
-        source_root = ET.fromstring((stock_root / "common" / name).read_bytes())
-        stub = ET.Element(source_root.tag, {**source_root.attrib, "AutoMerge": "1"})
-        merge_xml[name] = ET.tostring(stub, encoding="utf-8", xml_declaration=True) + b"\n"
     thumbnails = {name: (delta_root / "thumbnail" / name).read_bytes() for name in THUMBNAILS}
     stock_html = (vfs_root / EFB_HTML).read_bytes()
     if stock_html.count(STOCK_EFB_IMPORT) != 1 or b'id="iniEfbA330"' not in stock_html:
@@ -97,6 +94,10 @@ def prepare(vfs_root):
         raise ValueError("The WASM loader already includes this mod; supply pristine locally cached input")
     wasm_loader = stock_wasm_html.replace(STOCK_WASM_IMPORT, STOCK_WASM_IMPORT + b"\n" + WV081_FUEL_IMPORT)
     fuel_extension = (ROOT / "package" / FUEL_EXTENSION).read_bytes()
+    font_source = ECAM_FONT_CACHE / STOCK_ECAM_FONT
+    ecam_font = (font_source if font_source.exists() else vfs_root / STOCK_ECAM_FONT).read_bytes()
+    if not ecam_font:
+        raise ValueError("The installed A330 ECAM font is empty; keep VFS Projector active and retry")
 
     dist = ROOT / "dist"
     destination = dist / "local-sdk-sources"
@@ -114,19 +115,18 @@ def prepare(vfs_root):
     for name, content in stock.items():
         write(Path("reference/rr") / name, content)
         write(AIRCRAFT / PRESET / name, overrides.get(name, content))
-    for name, content in merge_xml.items():
-        # The native modular lister omits preset checklist/PNG files; use a separate SDK Copy group.
-        base = Path("preset-resources") if name.startswith("checklist/") else AIRCRAFT / PRESET
-        write(base / name, content)
+    # The native modular lister omits preset PNG files; use a separate SDK Copy group.
     for name, content in thumbnails.items():
         write(Path("preset-resources/thumbnail") / name, content)
     write(Path("efb-loader") / EFB_HTML.relative_to("html_ui"), loader)
     write(Path("efb-loader") / EFB_EXTENSION.relative_to("html_ui"), extension)
     write(Path("efb-loader") / WASM_HTML.relative_to("html_ui"), wasm_loader)
     write(Path("efb-loader") / FUEL_EXTENSION.relative_to("html_ui"), fuel_extension)
+    write(Path("efb-loader") / FUEL_EXTENSION.relative_to("html_ui").parent / STOCK_ECAM_FONT.name, ecam_font)
     write(Path("legal/LICENSE"), (ROOT / "LICENSE").read_bytes())
     write(Path("legal/LOCAL-ONLY.txt"), NOTICE.encode("utf-8"))
-    prepare_center_controls(vfs_root, stage / "center-controls")
+    # Inside the ModularSimObject tree so the SDK compiles the attachment model behaviors.
+    prepare_center_controls(vfs_root, stage)
 
     # Preserve every CFG without an authored delta exactly, including camera/navigation files.
     for name, content in stock.items():
@@ -139,10 +139,10 @@ def prepare(vfs_root):
             raise ValueError("Refusing to replace prepared sources outside the expected directory")
         shutil.rmtree(destination)
     stage.rename(destination)
-    print(f"Prepared {len(stock)} stock preset CFG files and {len(merge_xml)} XML merge declarations.")
+    print(f"Prepared {len(stock)} stock preset CFG files.")
     print(f"Private sources: {destination}")
     print(f"SDK project: {ROOT / 'A330_WV081_Project.xml'}")
-    print("Shared instrument loaders select the exact WV081 title for EFB warnings and the fuel display prototype.")
+    print("Shared instrument loaders select the exact WV081 title for EFB loading and the centre-fuel controller.")
     print("No build, install, ZIP, or simulator launch performed. Keep generated sources and SDK output private.")
 
 
