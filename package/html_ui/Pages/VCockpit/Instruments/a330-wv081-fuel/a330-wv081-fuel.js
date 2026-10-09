@@ -9,6 +9,7 @@
     const GREEN = "#60cd63";
     const AMBER = "#ff8a50";
     const EDGE = "#cdced0";
+    const CYAN = "#4fd1ff"; // Sampled from the stock E/WD background labels.
     const PUMP_Y = 265.7; // Centre line of the native -200 centre pump squares, in gauge pixels.
     const TRANSFER_Y = 311.2; // Native -200 transfer line under the centre pumps.
     const states = new WeakMap();
@@ -212,7 +213,7 @@
         return true;
     }
 
-    function updateSide(side, pump, autoAllowed, innerKg, fullKg, centreGallons, dt) {
+    function updateSide(side, pump, autoAllowed, manual, innerKg, fullKg, centreGallons, dt) {
         const key = side === "LEFT" ? "Left" : "Right";
         let active = controller["active" + key];
         if (!pump || !autoAllowed || !(centreGallons > CENTRE_UNUSABLE_GALLONS)) {
@@ -226,8 +227,13 @@
         if (active) {
             controller["due" + key] += PUMP_GALLONS_PER_SECOND * dt;
         }
+        // Fault only when a demanded transfer could not be applied. An empty centre tank stops the
+        // pumps without a fault, as on the stock -200 and the real aircraft.
+        const demanded = active || (manual && centreGallons > CENTRE_UNUSABLE_GALLONS);
+        const fault = pump && demanded && local("WV081_CTR_STATUS") === 1;
         publish("WV081_CTR_" + side.charAt(0) + "_PUMP_ON", pump ? 1 : 0);
         publish("WV081_CTR_" + side.charAt(0) + "_FEEDING", active ? 1 : 0);
+        publish("WV081_CTR_" + side.charAt(0) + "_FAULT", fault ? 1 : 0);
     }
 
     function runController() {
@@ -258,7 +264,8 @@
         const usable = Math.max(0, centre - CENTRE_UNUSABLE_GALLONS);
         const phase = local("INI_flight_phase");
         // The stock -200 logic needs the manual XFR selection up to the takeoff phase.
-        const autoAllowed = phase > 2 || local("INI_CENTER_TANK_FUEL_XFR") === 1;
+        const manual = local("INI_CENTER_TANK_FUEL_XFR") === 1;
+        const autoAllowed = phase > 2 || manual;
         const sides = [["LEFT", "LEFT MAIN", "INI_CENTER_TANK_LEFT", "INI_ELEC_AC_BUS_1_IS_POWERED"],
             ["RIGHT", "RIGHT MAIN", "INI_CENTER_TANK_RIGHT", "INI_ELEC_AC_BUS_2_IS_POWERED"]];
         const room = {};
@@ -266,7 +273,7 @@
             const inner = quantity(tank);
             const full = capacity(tank);
             room[side] = Math.max(0, full - FULL_MARGIN_KG / kilogramsPerGallon - inner);
-            updateSide(side, local(button) === 1 && local(bus) === 1, autoAllowed,
+            updateSide(side, local(button) === 1 && local(bus) === 1, autoAllowed, manual,
                 inner * kilogramsPerGallon, full * kilogramsPerGallon, centre, dt);
         }
         const left = Math.min(controller.dueLeft, room.LEFT);
@@ -315,7 +322,12 @@
             const group = add(svg, "g", { fill: "none", "stroke-width": 2 });
             const box = add(group, "rect", { x: centre - 20.5, y: PUMP_Y - 20.5, width: 41, height: 41 });
             const bar = add(group, "line", {});
-            return { centre, box, bar };
+            // Low-pressure legend inside the square, as the native page shows for a failed pump.
+            const low = add(group, "text", {
+                x: centre, y: PUMP_Y + 8, "font-size": 23, "font-family": "'WV081 ECAM', Roboto, sans-serif",
+                "text-anchor": "middle", fill: AMBER, stroke: "none", display: "none"
+            }, "LO");
+            return { centre, box, bar, low };
         });
         const transfer = add(svg, "line", { x1: 348, y1: TRANSFER_Y, x2: 432, y2: TRANSFER_Y, "stroke-width": 2 });
         const quantity = add(svg, "text", {
@@ -327,10 +339,12 @@
 
     // Selected and powered pumps are green, otherwise amber. While transferring the bar turns in line
     // and runs down to the transfer line, as on the -200 page.
-    function showPump(pump, available, transferring) {
-        const colour = available ? GREEN : AMBER;
+    function showPump(pump, available, transferring, fault) {
+        const colour = available && !fault ? GREEN : AMBER;
         pump.box.setAttribute("stroke", colour);
         pump.bar.setAttribute("stroke", colour);
+        pump.bar.setAttribute("display", fault ? "none" : "inline");
+        pump.low.setAttribute("display", fault ? "inline" : "none");
         const attributes = transferring
             ? { x1: pump.centre, y1: PUMP_Y - 20.5, x2: pump.centre, y2: TRANSFER_Y }
             : { x1: pump.centre - 14, y1: PUMP_Y, x2: pump.centre + 14, y2: PUMP_Y };
@@ -385,11 +399,87 @@
         state.quantity.setAttribute("fill", quantityColour);
         state.quantity.setAttribute("stroke", quantityColour);
         // Transfer states come from this controller; the stock -300 clears its own centre flags.
-        const leftFeeding = local("WV081_CTR_L_FEEDING") === 1;
-        const rightFeeding = local("WV081_CTR_R_FEEDING") === 1;
-        showPump(state.pumps[0], local("WV081_CTR_L_PUMP_ON") === 1, leftFeeding);
-        showPump(state.pumps[1], local("WV081_CTR_R_PUMP_ON") === 1, rightFeeding);
+        const leftFault = local("WV081_CTR_L_FAULT") === 1;
+        const rightFault = local("WV081_CTR_R_FAULT") === 1;
+        const leftFeeding = local("WV081_CTR_L_FEEDING") === 1 && !leftFault;
+        const rightFeeding = local("WV081_CTR_R_FEEDING") === 1 && !rightFault;
+        showPump(state.pumps[0], local("WV081_CTR_L_PUMP_ON") === 1, leftFeeding, leftFault);
+        showPump(state.pumps[1], local("WV081_CTR_R_PUMP_ON") === 1, rightFeeding, rightFault);
         state.transfer.setAttribute("stroke", leftFeeding || rightFeeding ? GREEN : "none");
+        state.svg.style.display = "block";
+    }
+
+    // E/WD caution for a centre pump with low delivery pressure, in the native caution format measured
+    // on the stock -300 page: a 28-cell monospace grid, the title underlined, settings right-aligned.
+    const CAUTION = {
+        x: 18.6, firstRow: 554.7, rowPitch: 31.2, rows: 6, font: 20.3, cell: 16.8, width: 28,
+        underlineOffset: 4.5, underlineThickness: 3.4,
+    };
+    const DOTS = "............................";
+
+    function createCautionLayer(instrument) {
+        const frame = instrument.querySelector("#Mainframe");
+        if (!frame) {
+            return null;
+        }
+        const svg = add(frame, "svg", {
+            viewBox: "0 0 780 780", preserveAspectRatio: "none", "aria-label": "Experimental centre pump caution"
+        });
+        svg.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;"
+            + "pointer-events:none;z-index:1;display:none;";
+        add(svg, "style", {}, "@font-face{font-family:'WV081 ECAM';"
+            + "src:url('/Pages/VCockpit/Instruments/a330-wv081-fuel/inidisplayini-regular.ttf');}");
+        const font = { "font-size": CAUTION.font, "font-family": "'WV081 ECAM', Roboto, sans-serif", "xml:space": "preserve" };
+        const title = add(svg, "text", Object.assign({ x: CAUTION.x, fill: AMBER }, font), "");
+        const underline = add(svg, "rect", { x: CAUTION.x, width: 4 * CAUTION.cell, height: CAUTION.underlineThickness, fill: AMBER });
+        const action = add(svg, "text", Object.assign({ x: CAUTION.x, fill: CYAN }, font), "");
+        return { svg, title, underline, action };
+    }
+
+    function isEwdVisible(instrument) {
+        const canvas = instrument.m_wasmSimCanvas;
+        const nativeImage = canvas && canvas.m_imgElement;
+        if (!nativeImage || !nativeImage.parentNode || !nativeImage.getAttribute("src")) {
+            return false;
+        }
+        return local("INI_IS_200") === 0
+            && local("INI_EWD_VALID") === 0
+            && local("INI_EWD_FAILURE") === 0
+            && local("INI_EWD_DISPLAYING_STATUS") === 0
+            && local("INI_ELEC_AC_BUS_1_IS_POWERED") === 1
+            && local("EWD_BRIGHTNESS_ACT") > 0
+            && local("INI_EWD_ECAM_TFR") === 0
+            && local("INI_ECAM_OVERRIDE_EWD") === 0;
+    }
+
+    function updateCautionLayer(instrument) {
+        let state = states.get(instrument);
+        const left = local("WV081_CTR_L_FAULT") === 1;
+        const right = local("WV081_CTR_R_FAULT") === 1;
+        if (!(left || right) || !isEwdVisible(instrument)) {
+            if (state) {
+                state.svg.style.display = "none";
+            }
+            return;
+        }
+        if (!state) {
+            state = createCautionLayer(instrument);
+            if (!state) {
+                return;
+            }
+            states.set(instrument, state);
+        }
+        const pumps = left && right ? "L+R" : left ? "L" : "R";
+        // The stock list grows from the top; use the top rows only while it is empty.
+        const stockLines = local("INI_ATLEASTONEMASTERCAUTION") === 1 || local("INI_ATLEASTONEMASTERWARNING") === 1
+            || local("EWD_IS_TO_MEMO_SHOWED") === 1 || local("EWD_IS_LDG_MEMO_SHOWED") === 1;
+        const row = stockLines ? CAUTION.rows - 2 : 0;
+        const y = index => CAUTION.firstRow + (row + index) * CAUTION.rowPitch;
+        state.title.setAttribute("y", y(0));
+        state.title.textContent = "FUEL " + pumps + " CTR PUMP LO PR";
+        state.underline.setAttribute("y", y(0) + CAUTION.underlineOffset - CAUTION.underlineThickness / 2);
+        state.action.setAttribute("y", y(1));
+        state.action.textContent = ("-" + pumps + " CTR PUMP" + DOTS).slice(0, CAUTION.width - 3) + "OFF";
         state.svg.style.display = "block";
     }
 
@@ -409,6 +499,8 @@
                 runController();
             } else if (scoped(this, "ecam")) {
                 updateLayer(this);
+            } else if (scoped(this, "ewd")) {
+                updateCautionLayer(this);
             } else {
                 const state = states.get(this);
                 if (state) {

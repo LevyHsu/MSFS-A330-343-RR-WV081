@@ -365,6 +365,15 @@ def model_xml():
             state + " (L:INI_ANNLT_SWITCH, Number) 0 == or"
             " (L:INI_GENERAL_LIGHT_MULTIPLIER, Number) * (L:INI_AC_LIGHTS_FAILURE, Bool) *"
         )
+        # The donor never drives the upper FAULT face; the controller reports low pump pressure.
+        if name != "FUEL_CTR_XFR":
+            fault = ET.SubElement(behaviors, "Component", {"ID": "WV081_" + name + "_FAULT", "Node": name + "_SEQ1"})
+            emissive = ET.SubElement(fault, "UseTemplate", {"Name": "ASOBO_GT_Material_Emissive_Code"})
+            ET.SubElement(emissive, "NODE_ID").text = name + "_SEQ1"
+            ET.SubElement(emissive, "EMISSIVE_CODE").text = (
+                f"(L:WV081_CTR_{name[-1]}_FAULT, Bool) (L:INI_ANNLT_SWITCH, Number) 0 == or"
+                " (L:INI_GENERAL_LIGHT_MULTIPLIER, Number) * (L:INI_AC_LIGHTS_FAILURE, Bool) *"
+            )
     # Legends follow the stock overhead lettering's integral-lighting potentiometer.
     legends = ET.SubElement(behaviors, "Component", {"ID": "WV081_CTR_LEGENDS", "Node": "WV081_CTR_LEGENDS"})
     lighting = ET.SubElement(legends, "UseTemplate", {"Name": "ASOBO_GT_Material_Emissive_Code"})

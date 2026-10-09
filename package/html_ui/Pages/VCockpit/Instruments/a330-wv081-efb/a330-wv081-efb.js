@@ -4,7 +4,7 @@
     "use strict";
 
     const AIRCRAFT_TITLE = "A330 WV081 Community - A330-300 (RR) Baseline";
-    const VERSION = "0.3.6";
+    const VERSION = "0.3.7";
     const FUEL_TANKS = ["LEFT MAIN", "RIGHT MAIN", "LEFT AUX", "RIGHT AUX", "EXTERNAL1", "CENTER"];
     // A330-200 refuel schedule: trim holds 2,400 kg when the wings are full, before any centre fuel.
     const CENTRE_BASE_TRIM_KG = 2400;

@@ -176,6 +176,20 @@ The v0.3.5 centre section still differed from the stock -200 page in shape and d
 
 SDK build 026 passed with no new builder diagnostics: 28 payload entries. With MSFS closed, v0.3.6 replaced v0.3.5; all 30 installed files match the SDK output. The ground check confirmed all three pump states, the digit size and weight, and a continuous tank bottom line. Colours are the stock element-sheet values and are not judged from screenshots, which are HDR captures and read brighter than the display.
 
+## v0.3.7 centre pump FAULT lights and E/WD caution
+
+This version adds the indications the A330-200 gives when a demanded centre transfer does not happen:
+- **Overhead:** the upper half of each CTR pump button is the amber FAULT face. The donor -200 never drives it (its behaviour lights only the lower OFF and MAN faces from `INI_CENTER_TANK_*`); the attachment now lights it from `L:WV081_CTR_L_FAULT` and `L:WV081_CTR_R_FAULT`, with the stock annunciator-test and lighting multipliers.
+- **Controller:** a pump faults when it is selected on and powered, a transfer is demanded (AUTO with an active demand, or MAN with centre fuel available) and the controller could not apply the transfer after its retries (`WV081_CTR_STATUS` 1). An empty centre tank gives no fault: the real aircraft stops the centre pumps and closes the inner inlet valves when the tank is empty, and the stock -200, checked with a zeroed centre tank, both pumps ON and XFR in MAN, shows no FAULT, no LO and no caution. The real FAULT light signals a transfer that should have taken place but has not, or a failed pump; pump failures are not modelled.
+- **Fuel page:** a faulted pump shows an amber square with LO inside instead of its bar, and its transfer line is removed.
+- **E/WD:** `FUEL L CTR PUMP LO PR` (R, or L+R) with the action line `-L CTR PUMP ... OFF`, drawn by an overlay on the E/WD gauge in the native caution format and colours (amber, and the cyan sampled from the stock E/WD background).
+
+The stock caution list cannot be extended. The module carries the -200's `CTR PUMP LO PR` text and `INI_CTR_TANK_L/R_FAILURE` variables, but on the -300 it resets those, the master-caution request and light variables and `INI_MASTER_CAUTION_SOUND` within a frame, and no chime event name is exposed. The overlay caution therefore cannot light the MASTER CAUT buttons, sound the single chime, or be cleared with the ECAM CLR key; it stays while the fault persists. It uses the top two rows while the stock list is empty (no caution, warning or memo flags) and the bottom two rows otherwise, so it can overlap a long stock list.
+
+The caution geometry was measured on the stock -300 E/WD against a native `F/CTL SEC (1) FAULT` caution, with a magenta copy drawn in the empty rows below it: a 28-cell monospace grid of 16.8-px cells from gauge x 18.6, first baseline at y 554.7, 31.2-px row pitch (six rows above the divider's end), `inidisplayini` at 20.3 units, and a title underline 3.4 px thick 4.5 px below the baseline. The message starts one cell after the title; action lines carry dot leaders and a right-aligned setting. The fuel LO PR cautions themselves are inhibited on the ground with the engines off, as on the stock aircraft.
+
+SDK build 027 passed with no new builder diagnostics: 28 payload entries, both FAULT components compiled into the attachment. With MSFS closed, v0.3.7 replaced v0.3.6; all 30 installed files match the SDK output.
+
 ## Prepare private SDK sources
 
 The workflow prepares the current source candidate from the installed RR preset, donor controls and instrument loaders. The distributed project contains only original preparation tools, configuration deltas, instrument extensions and thumbnails. Stock-derived configuration, model extracts and HTML stay in ignored local build files and must not be redistributed. The installed aircraft retains ownership of its native systems module and data.
