@@ -174,6 +174,8 @@ The v0.3.5 centre section still differed from the stock -200 page in shape and d
 - **Pumps:** 41 × 41 squares with a 2 px stroke, matching the native element-sheet square, centred at gauge x 366.3 and 413.7, y 265.7. The idle cross-line is 28 units long. While transferring, each pump's line runs in line from the top of its square down to a transfer line at y 311.2, spanning x 348–432, as the -200 draws with CTR XFR in MAN.
 - **Quantity:** `inidisplayini` at 23 units, centred at x 388.6 on a 352.6 baseline, with a 0.4-unit outline in the same colour. Test strings on the live page matched the native digits' 130 × 34 px size; the native stroke weight lies between plain text and a 0.7-unit outline. Coherent GT ignored `font-weight: bold`, and drew no SVG text that also had opacity attributes.
 
+SDK build 026 passed with no new builder diagnostics: 28 payload entries. With MSFS closed, v0.3.6 replaced v0.3.5; all 30 installed files match the SDK output. The ground check confirmed all three pump states, the digit size and weight, and a continuous tank bottom line. Colours are the stock element-sheet values and are not judged from screenshots, which are HDR captures and read brighter than the display.
+
 ## Prepare private SDK sources
 
 The workflow prepares the current source candidate from the installed RR preset, donor controls and instrument loaders. The distributed project contains only original preparation tools, configuration deltas, instrument extensions and thumbnails. Stock-derived configuration, model extracts and HTML stay in ignored local build files and must not be redistributed. The installed aircraft retains ownership of its native systems module and data.
