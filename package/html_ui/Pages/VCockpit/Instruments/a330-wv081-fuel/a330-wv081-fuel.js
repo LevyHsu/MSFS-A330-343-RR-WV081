@@ -442,10 +442,10 @@
         if (!nativeImage || !nativeImage.parentNode || !nativeImage.getAttribute("src")) {
             return false;
         }
+        // INI_EWD_DISPLAYING_STATUS is not a flag (it reads 4 on the normal page), so it is not used.
         return local("INI_IS_200") === 0
             && local("INI_EWD_VALID") === 0
             && local("INI_EWD_FAILURE") === 0
-            && local("INI_EWD_DISPLAYING_STATUS") === 0
             && local("INI_ELEC_AC_BUS_1_IS_POWERED") === 1
             && local("EWD_BRIGHTNESS_ACT") > 0
             && local("INI_EWD_ECAM_TFR") === 0
@@ -470,16 +470,19 @@
             states.set(instrument, state);
         }
         const pumps = left && right ? "L+R" : left ? "L" : "R";
-        // The stock list grows from the top; use the top rows only while it is empty.
-        const stockLines = local("INI_ATLEASTONEMASTERCAUTION") === 1 || local("INI_ATLEASTONEMASTERWARNING") === 1
-            || local("EWD_IS_TO_MEMO_SHOWED") === 1 || local("EWD_IS_LDG_MEMO_SHOWED") === 1;
-        const row = stockLines ? CAUTION.rows - 2 : 0;
-        const y = index => CAUTION.firstRow + (row + index) * CAUTION.rowPitch;
+        // In AUTO a failed transfer is a transfer fault whose procedure selects MAN, as for the
+        // documented T TK and OUTR TK transfer faults; in MAN the pumps run without effect.
+        const manual = local("INI_CENTER_TANK_FUEL_XFR") === 1;
+        const message = manual ? pumps + " CTR PUMP LO PR" : "CTR TK XFR FAULT";
+        const action = manual ? ["-" + pumps + " CTR PUMP", "OFF"] : ["-CTR TANK XFR", "MAN"];
+        // The stock list grows from the top and ordinary memos have no readable flag, so the
+        // caution takes the bottom two rows; only a stock list of five or more lines overlaps it.
+        const y = index => CAUTION.firstRow + (CAUTION.rows - 2 + index) * CAUTION.rowPitch;
         state.title.setAttribute("y", y(0));
-        state.title.textContent = "FUEL " + pumps + " CTR PUMP LO PR";
+        state.title.textContent = "FUEL " + message;
         state.underline.setAttribute("y", y(0) + CAUTION.underlineOffset - CAUTION.underlineThickness / 2);
         state.action.setAttribute("y", y(1));
-        state.action.textContent = ("-" + pumps + " CTR PUMP" + DOTS).slice(0, CAUTION.width - 3) + "OFF";
+        state.action.textContent = (action[0] + DOTS).slice(0, CAUTION.width - action[1].length) + action[1];
         state.svg.style.display = "block";
     }
 
