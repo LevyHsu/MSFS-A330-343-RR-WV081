@@ -19,6 +19,7 @@
     const PUMP_GALLONS_PER_SECOND = 3375 / 3600;
     const REFILL_BELOW_FULL_KG = 2000;
     const FULL_MARGIN_KG = 50;
+    const REFILL_STOP_KG = 150; // Full margin plus one 25-gallon chunk; the v0.3.7 flight never stopped at 50.
     // A330-200 refuel schedule above full wings: trim from 2,400 kg towards capacity, the rest in centre.
     const TRIM_BASE_KG = 2400;
     // TCDS A330-300 3-tank: 83 L of centre fuel is unusable.
@@ -220,7 +221,9 @@
             active = false;
         } else if (!active && innerKg <= fullKg - REFILL_BELOW_FULL_KG) {
             active = true;
-        } else if (active && innerKg >= fullKg - FULL_MARGIN_KG) {
+        } else if (active && innerKg >= fullKg - REFILL_STOP_KG) {
+            // Top-up writes land a little under the full margin; stop within a chunk of it, so the
+            // transfer cycles between full and 2,000 kg below full instead of trickling at burn rate.
             active = false;
         }
         controller["active" + key] = active;
