@@ -4,7 +4,7 @@
     "use strict";
 
     const AIRCRAFT_TITLE = "A330 WV081 Community - A330-300 (RR) Baseline";
-    const VERSION = "0.3.8";
+    const VERSION = "0.3.10";
     const FUEL_TANKS = ["LEFT MAIN", "RIGHT MAIN", "LEFT AUX", "RIGHT AUX", "EXTERNAL1", "CENTER"];
     // A330-200 refuel schedule: trim holds 2,400 kg when the wings are full, before any centre fuel.
     const CENTRE_BASE_TRIM_KG = 2400;
@@ -43,6 +43,58 @@
         element.textContent = message;
         element.style.background = level === "ready" ? "#123329" : level === "notice" ? "#4a3510" : "#38141d";
         element.style.display = message ? "block" : "none";
+    }
+
+    // WV081 chocks. MSFS 2024 keeps the chocks as native cover 0, writable through A:COVER ON:0 (true
+    // only on the ground). The stock EFB sends COVER_SET with the index in the wrong place and never
+    // works, so its button is replaced by one that writes the cover state; a330-wv081-fuel.js holds the
+    // brakes while the chocks are in.
+    function chocksSet() {
+        return SimVar.GetSimVarValue("A:COVER ON:0", "bool") === 1;
+    }
+
+    function chocksButton(state) {
+        const button = state.instrument.querySelector("#groundEquip_CHOCKS");
+        if (!button) {
+            return;
+        }
+        if (!button.wv081Chocks) {
+            const replacement = button.cloneNode(true); // Drops the stock handler, which is gated off.
+            replacement.wv081Chocks = true;
+            // The stock page keeps disabling the button through its property; ignore those writes.
+            Object.defineProperty(replacement, "disabled", { get: () => false, set: () => {} });
+            replacement.addEventListener("click", toggleChocks);
+            button.replaceWith(replacement);
+            return;
+        }
+        button.removeAttribute("disabled");
+        button.classList.remove("ge-disabled");
+        const set = chocksSet();
+        button.textContent = set ? "Chocks Set" : "Chocks";
+        button.classList.toggle("btn-success", set);
+        button.classList.toggle("btn-primary", !set);
+    }
+
+    function toggleChocks() {
+        const set = chocksSet();
+        const stopped = SimVar.GetSimVarValue("SIM ON GROUND", "bool") === 1
+            && SimVar.GetSimVarValue("GPS GROUND SPEED", "knots") < 1;
+        if (!set && !stopped) {
+            notify("Chocks need the aircraft stopped on the ground", "error");
+            return;
+        }
+        SimVar.SetSimVarValue("A:COVER ON:0", "bool", set ? 0 : 1);
+        notify(set ? "Chocks Removed" : "Chocks Set", "success");
+    }
+
+    function notify(text, type) {
+        try {
+            if (window.notie && typeof window.notie.alert === "function") {
+                window.notie.alert({ type, text, time: 3 });
+            }
+        } catch (_) {
+            // The toast is optional; the button shows the state.
+        }
     }
 
     function ready(state) {
@@ -123,6 +175,9 @@
                 state.nextRefresh = Date.now() + 500;
                 try {
                     refresh(state);
+                    if (state.title === AIRCRAFT_TITLE) {
+                        chocksButton(state);
+                    }
                 } catch (_) {
                     state.ready = false;
                     if (state.title === AIRCRAFT_TITLE) {

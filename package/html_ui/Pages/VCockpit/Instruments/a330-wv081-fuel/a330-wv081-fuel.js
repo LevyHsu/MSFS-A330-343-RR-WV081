@@ -42,7 +42,7 @@
     const controller = {
         lastTime: NaN, nextTime: -Infinity, remaining: null, targets: null, steps: [], check: null, retries: 0, onDone: null,
         dueLeft: 0, dueRight: 0, activeLeft: false, activeRight: false,
-        refuelSequence: NaN, published: {},
+        trimRef: NaN, reroute: 0, holding: false, refuelSequence: NaN, published: {},
     };
 
     if (typeof WasmInstrument === "undefined" || WasmInstrument.prototype.wv081CentreOverlay) {
@@ -249,6 +249,27 @@
         if (!(kilogramsPerGallon > 0)) {
             return;
         }
+        // The stock -300 forward transfer moves trim fuel into the inner tanks. With a centre tank the
+        // aircraft sends it to the centre tank and the centre pumps carry it on, so every amount the
+        // stock takes from the trim tank is moved from the inner tanks into the centre tank.
+        const trim = reported("EXTERNAL1", kilogramsPerGallon);
+        const forward = local("INI_FORWARD_TRANSFER_ENABLED") === 1 && capacity("CENTER") > 0;
+        if (forward && Number.isFinite(trim) && Number.isFinite(controller.trimRef)) {
+            controller.reroute += Math.max(0, controller.trimRef - trim);
+        }
+        controller.trimRef = trim;
+        publish("WV081_FWD_REROUTE", forward ? 1 : 0);
+        // Chocks are MSFS 2024 cover 0, set from the WV081 EFB or the external view. Hold the brakes
+        // while they are in with the parking brake released, and release them when they go. Brake
+        // positions only follow the axis events, which persist.
+        const hold = read("A:COVER ON:0", "bool") === 1 && read("SIM ON GROUND", "bool") === 1
+            && read("BRAKE PARKING POSITION", "bool") !== 1;
+        if (hold || controller.holding) {
+            const axis = hold ? 16383 : -16383;
+            SimVar.SetSimVarValue("K:AXIS_LEFT_BRAKE_SET", "number", axis);
+            SimVar.SetSimVarValue("K:AXIS_RIGHT_BRAKE_SET", "number", axis);
+        }
+        controller.holding = hold;
         if (controller.check) {
             verifyStep(now, kilogramsPerGallon);
             return;
@@ -259,6 +280,16 @@
         }
         if (handleRefuel(kilogramsPerGallon)) {
             return;
+        }
+        // Flush the re-routed amount in chunks while the transfer runs, and whatever is left when it ends.
+        if (controller.reroute >= (forward ? CHUNK_GALLONS : 0.5)) {
+            const move = Math.min(controller.reroute, Math.max(0, capacity("CENTER") - quantity("CENTER")),
+                quantity("LEFT MAIN") + quantity("RIGHT MAIN"));
+            controller.reroute = 0;
+            if (move >= 0.5) {
+                begin({ "LEFT MAIN": -move / 2, "RIGHT MAIN": -move / 2, "CENTER": move });
+                return;
+            }
         }
         // Credit pump flow for the whole interval, including ticks spent writing and verifying.
         const dt = Math.min(Math.max(now - controller.lastTime, 0), 5) || 0;
